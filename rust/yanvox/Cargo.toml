@@ -1,0 +1,18 @@
+[package]
+name = "yanvox"
+version = "0.1.0"
+edition = "2024"
+description = "A VDB-inspired voxel engine library for high-resolution sparse volumes"
+authors = ["Your Name <your.email@example.com>"]
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/yourusername/yanvox"
+keywords = ["voxel", "vdb", "volume", "sparse", "3d", "engine"]
+categories = ["graphics", "data-structures", "game-development"]
+
+[dependencies]
+serde = { version = "1.0", features = ["derive"] }
+thiserror = "1.0"
+log = "0"
+
+[dev-dependencies]
+test-log = "0"
