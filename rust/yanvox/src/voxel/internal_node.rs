@@ -26,11 +26,11 @@ pub struct InternalNode<T: VoxelData, N: ChildNodeTrait<T>, const LOG2: usize> {
 
 impl<T: VoxelData, N: ChildNodeTrait<T>, const LOG2: usize> InternalNode<T, N, LOG2> {
     /// Create a new internal node
-    fn from_level_and_coord(level: u32, coord: Vec3i) -> Self {
+    fn from_level_and_coord(level: u32, coord: Vec3i, background_value: T) -> Self {
         let total_size = Self::child_capacity();
         let origin = <Self as ChildNodeTrait::<_>>::key(coord);
         Self {
-            background_value: T::background(),
+            background_value,
             data: (0..total_size as usize).map(|_| None).collect(),
             origin,
             level,
@@ -149,17 +149,12 @@ impl<T: VoxelData, N: ChildNodeTrait<T>, const LOG2: usize> InternalNode<T, N, L
         self.data.capacity() * std::mem::size_of::<Option<N>>()
     }
 
-    /// Internal method to find or create child node for a coordinate
-    fn get_or_create_child(&mut self, coord: Vec3i) -> &mut N {
+    /// Internal method to create a new child node for a coordinate
+    fn create_child(&mut self, coord: Vec3i) -> &mut N {
         let index = self.coord_to_index(coord.clone()).expect("Child key should be within bounds");
-        
-        if self.data[index].is_none() {
-            // Create new child node
-            let child = N::create(coord, self.level + 1);
-            self.data[index] = Some(child);
-            self.active_count += 1;
-        }
-        
+        let child = N::create(coord, self.level + 1, self.background_value.clone());
+        self.data[index] = Some(child);
+        self.active_count += 1;
         self.data[index].as_mut().unwrap()
     }
 
@@ -217,18 +212,26 @@ impl<T: VoxelData, N: ChildNodeTrait<T>, const LOG2: usize> NodeTrait<T> for Int
             .sum()
     }
 
-    fn get_voxel(&self, coord: Vec3i) -> Option<&T> {
+    fn get_voxel(&self, coord: Vec3i) -> &T {
         if let Some(child) = self.find_child(coord) {
             child.get_voxel(coord)
         } else {
-            None
+            &self.background_value
         }
     }
 
     fn set_voxel(&mut self, coord: Vec3i, value: T) -> Option<T> {
-        // Internal nodes delegate to children
-        let child = self.get_or_create_child(coord);
-        child.set_voxel(coord, value)
+        if let Some(child) = self.find_child_mut(coord) {
+            // Internal nodes delegate to children
+            child.set_voxel(coord, value)
+        } else if self.background_value != value {
+            // Create a new child if the background value is different
+            let child = self.create_child(coord);
+            child.set_voxel(coord, value)
+        } else {
+            // Do nothing if the background value is the same
+            None
+        }
     }
 
     fn remove_voxel(&mut self, coord: Vec3i) -> Option<T> {
@@ -256,10 +259,12 @@ impl<T: VoxelData, N: ChildNodeTrait<T>, const LOG2: usize> NodeTrait<T> for Int
         )
     }
 
+    /*
     // Background value operations
     fn background_value(&self) -> &T {
         &self.background_value
     }
+        */
 }
 
 // Implementation of ChildNodeTrait for InternalNode
@@ -274,8 +279,8 @@ impl<T: VoxelData, N: ChildNodeTrait<T>, const LOG2: usize> ChildNodeTrait<T> fo
         LOG2 as u32 + <N as ChildNodeTrait::<_>>::log2_cum()
     }
 
-    fn create(coord: Vec3i, level: u32) -> Self {
-        Self::from_level_and_coord(level, coord)
+    fn create(coord: Vec3i, level: u32, background_value: T) -> Self {
+        Self::from_level_and_coord(level, coord, background_value)
     }
 }
 
@@ -305,7 +310,7 @@ impl<T: VoxelData, N: ChildNodeTrait<T>, const LOG2: usize> NodeDiagnostics<T> f
 // Implement Default for common voxel types
 impl<T: VoxelData, N: ChildNodeTrait<T>, const LOG2: usize> Default for InternalNode<T, N, LOG2> {
     fn default() -> Self {
-        Self::from_level_and_coord(0, Vec3i::zero())
+        Self::from_level_and_coord(0, Vec3i::zero(), T::background())
     }
 }
 
@@ -328,7 +333,7 @@ mod tests {
 
     #[test]
     fn test_node_diagnostics() {
-        let mut internal = InternalNode::<f32, LeafNode<f32, 2>, 3>::from_level_and_coord(5, Vec3i::zero());
+        let mut internal = InternalNode::<f32, LeafNode<f32, 2>, 3>::from_level_and_coord(5, Vec3i::zero(), 0.0);
         
         // Test diagnostics
         assert_eq!(internal.log2_child_size(), 3);
@@ -339,7 +344,7 @@ mod tests {
 
     #[test]
     fn convert_coord_to_index() {
-        let internal = InternalNode::<f32, LeafNode<f32, 2>, 3>::from_level_and_coord(5, Vec3i::zero());
+        let internal = InternalNode::<f32, LeafNode<f32, 2>, 3>::from_level_and_coord(5, Vec3i::zero(), 0.0);
         
         assert_eq!(internal.level(), 5);
         assert_eq!(internal.bounds(), Bounds3i::new(Vec3i::zero(), Vec3i::new(32, 32, 32)));
@@ -357,7 +362,7 @@ mod tests {
         assert_eq!(internal.coord_to_index(Vec3i::new(40, 5, 1)), None);
         assert_eq!(internal.coord_to_index(Vec3i::new(32, 1, 1)), None);
 
-        let internal = InternalNode::<f32, LeafNode<f32, 2>, 3>::from_level_and_coord(5, Vec3i::new(32, 64, 96));
+        let internal = InternalNode::<f32, LeafNode<f32, 2>, 3>::from_level_and_coord(5, Vec3i::new(32, 64, 96), 0.0);
         assert_eq!(internal.coord_to_index(Vec3i::new(32, 64, 96)), Some(0));
         assert_eq!(internal.coord_to_index(Vec3i::new(33, 65, 97)), Some(0));
         assert_eq!(internal.coord_to_index(Vec3i::new(62, 79, 106)), Some(159));
@@ -367,14 +372,14 @@ mod tests {
 
     #[test]
     fn convert_index_to_coord() {
-        let internal = InternalNode::<f32, LeafNode<f32, 2>, 3>::from_level_and_coord(5, Vec3i::zero());
+        let internal = InternalNode::<f32, LeafNode<f32, 2>, 3>::from_level_and_coord(5, Vec3i::zero(), 0.0);
         assert_eq!(internal.index_to_coord(0), Vec3i::new(0, 0, 0));
         assert_eq!(internal.index_to_coord(1), Vec3i::new(4, 0, 0));
         assert_eq!(internal.index_to_coord(8), Vec3i::new(0, 4, 0));
         assert_eq!(internal.index_to_coord(64), Vec3i::new(0, 0, 4));
         assert_eq!(internal.index_to_coord(159), Vec3i::new(28, 12, 8));
 
-        let internal = InternalNode::<f32, LeafNode<f32, 2>, 3>::from_level_and_coord(5, Vec3i::new(32, 64, 96));
+        let internal = InternalNode::<f32, LeafNode<f32, 2>, 3>::from_level_and_coord(5, Vec3i::new(32, 64, 96), 0.0);
         assert_eq!(internal.index_to_coord(0), Vec3i::new(32, 64, 96));
         assert_eq!(internal.index_to_coord(159), Vec3i::new(60, 76, 104));
     }

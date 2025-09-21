@@ -21,23 +21,20 @@ pub struct LeafNode<T: VoxelData, const LOG2: usize> {
 
     /// Level of this node (highest level, typically the leaf level)
     pub level: u32,
-    /// Number of active (non-background) voxels in this leaf
-    active_count: usize,
 }
 
 impl<T: VoxelData, const LOG2: usize> LeafNode<T, LOG2> {
     /// Create a new leaf node
-    pub fn from_level_and_coord(level: u32, coord: Vec3i) -> Self {
+    pub fn from_level_and_coord(level: u32, coord: Vec3i, background_value: T) -> Self {
         let dimensions = Self::calculate_dimensions();
         let total_size = dimensions.x * dimensions.y * dimensions.z;
         let origin = <Self as ChildNodeTrait::<_>>::key(coord);
         
         Self {
-            background_value: T::background(),
+            background_value,
             data: (0..total_size as usize).map(|_| None).collect(),
             origin,
             level,
-            active_count: 0,
         }
     }
 
@@ -59,7 +56,7 @@ impl<T: VoxelData, const LOG2: usize> LeafNode<T, LOG2> {
 
     /// Check if this leaf is at capacity
     pub fn is_at_capacity(&self) -> bool {
-        self.active_count >= Self::child_capacity()
+        self.active_count() >= Self::child_capacity()
     }
 
     /// Convert global coordinate to local index within the data vector
@@ -116,7 +113,7 @@ impl<T: VoxelData, const LOG2: usize> LeafNode<T, LOG2> {
 
     /// Get the density (active voxels / total capacity) of this leaf
     pub fn density(&self) -> f32 {
-        self.active_count as f32 / Self::child_capacity() as f32
+        self.active_count() as f32 / Self::child_capacity() as f32
     }
 
     /// Check if this leaf is sparse (low density)
@@ -138,7 +135,6 @@ impl<T: VoxelData, const LOG2: usize> LeafNode<T, LOG2> {
         for voxel in &mut self.data {
             *voxel = None;
         }
-        self.active_count = 0;
     }
 
     /// Optimize this leaf by removing inactive voxels
@@ -150,7 +146,6 @@ impl<T: VoxelData, const LOG2: usize> LeafNode<T, LOG2> {
                 }
             }
         }
-        self.active_count = self.data.iter().filter(|v| v.is_some()).count();
     }
 
     /// Get memory usage in bytes
@@ -184,22 +179,34 @@ impl<T: VoxelData, const LOG2: usize> NodeTrait<T> for LeafNode<T, LOG2> {
     }
 
     fn active_count(&self) -> usize {
-        self.active_count
+        self.data.iter().filter(|v| v.is_some() && v.as_ref().unwrap().is_active()).count()
     }
 
     fn total_count(&self) -> usize {
         self.data.iter().filter(|v| v.is_some()).count()
     }
 
-    fn get_voxel(&self, coord: Vec3i) -> Option<&T> {
+    fn get_voxel(&self, coord: Vec3i) -> &T {
         if let Some(index) = self.coord_to_index(coord) {
-            self.data.get(index)?.as_ref()
+            if let Some(value) = self.data.get(index).and_then(|v| v.as_ref()) {
+                value
+            } else {
+                &self.background_value
+            }
         } else {
-            None
+            &self.background_value
         }
     }
 
     fn set_voxel(&mut self, coord: Vec3i, value: T) -> Option<T> {
+        let index = self.coord_to_index(coord).expect("Coordinate should be within bounds");
+        let old_value = self.data.get_mut(index)?.replace(value);
+        old_value
+/*
+
+        if let Some(old_voxel) = self.data.get_mut(index) {
+
+
         if let Some(index) = self.coord_to_index(coord) {
             let was_active = self.data.get(index)
                 .and_then(|v| v.as_ref())
@@ -219,15 +226,13 @@ impl<T: VoxelData, const LOG2: usize> NodeTrait<T> for LeafNode<T, LOG2> {
         } else {
             None
         }
+        */
     }
 
     fn remove_voxel(&mut self, coord: Vec3i) -> Option<T> {
         if let Some(index) = self.coord_to_index(coord) {
             if let Some(voxel) = self.data.get_mut(index) {
                 if let Some(value) = voxel.take() {
-                    if value.is_active() {
-                        self.active_count = self.active_count.saturating_sub(1);
-                    }
                     return Some(value);
                 }
             }
@@ -253,10 +258,12 @@ impl<T: VoxelData, const LOG2: usize> NodeTrait<T> for LeafNode<T, LOG2> {
         )
     }
 
+    /*
     // Background value operations
     fn background_value(&self) -> &T {
         &self.background_value
     }
+        */
 }
 
 // Implementation of ChildNodeTrait for LeafNode
@@ -271,8 +278,8 @@ impl<T: VoxelData, const LOG2: usize> ChildNodeTrait<T> for LeafNode<T, LOG2> {
       LOG2 as u32
     }
 
-    fn create(coord: Vec3i, level: u32) -> Self {
-        Self::from_level_and_coord(level, coord)
+    fn create(coord: Vec3i, level: u32, background_value: T) -> Self {
+        Self::from_level_and_coord(level, coord, background_value)
     }
 }
 
@@ -295,14 +302,14 @@ impl<T: VoxelData, const LOG2: usize> NodeDiagnostics<T> for LeafNode<T, LOG2> {
 
     /// Returns the number of child voxels (not child nodes, since this is a leaf)
     fn child_count(&self) -> usize {
-        self.active_count
+        self.data.iter().filter(|v| v.is_some()).count()
     }
 }
 
 // Implement Default for common voxel types
 impl<T: VoxelData, const LOG2: usize> Default for LeafNode<T, LOG2> {
     fn default() -> Self {
-        Self::from_level_and_coord(0, Vec3i::zero())
+        Self::from_level_and_coord(0, Vec3i::zero(), T::background())
     }
 }
 
@@ -313,7 +320,7 @@ mod tests {
 
     #[test]
     fn test_child_node_trait() {
-        let _leaf = LeafNode::<f32, 6>::from_level_and_coord(5, Vec3i::zero());
+        let _leaf = LeafNode::<f32, 6>::from_level_and_coord(5, Vec3i::zero(), 0.0);
         
         // Test that the trait is implemented correctly
         assert_eq!(LeafNode::<f32, 6>::log2(), 6);
@@ -323,7 +330,7 @@ mod tests {
 
     #[test]
     fn test_node_diagnostics() {
-        let mut leaf = LeafNode::<f32, 6>::from_level_and_coord(5, Vec3i::zero());
+        let mut leaf = LeafNode::<f32, 6>::from_level_and_coord(5, Vec3i::zero(), 0.0);
         
         // Test diagnostics
         assert_eq!(leaf.log2_child_size(), 6);
@@ -340,7 +347,7 @@ mod tests {
 
     #[test]
     fn test_leaf_node_creation() {
-        let leaf = LeafNode::<f32, 6>::from_level_and_coord(5, Vec3i::zero()); // 2^6 = 64 children
+        let leaf = LeafNode::<f32, 6>::from_level_and_coord(5, Vec3i::zero(), 0.0); // 2^6 = 64 children
         
         assert_eq!(leaf.level(), 5);
         assert_eq!(leaf.bounds(), Bounds3i::new(Vec3i::zero(), Vec3i::new(64, 64, 64)));
@@ -351,7 +358,7 @@ mod tests {
 
     #[test]
     fn test_voxel_operations() {
-        let mut leaf = LeafNode::<f32, 6>::from_level_and_coord(5, Vec3i::zero());
+        let mut leaf = LeafNode::<f32, 6>::from_level_and_coord(5, Vec3i::zero(), 0.0);
         
         // Set a voxel
         let result = leaf.set_voxel(Vec3i::new(1, 1, 1), 42.0);
@@ -360,7 +367,7 @@ mod tests {
         assert!(leaf.is_active(Vec3i::new(1, 1, 1)));
         
         // Get the voxel
-        assert_eq!(leaf.get_voxel(Vec3i::new(1, 1, 1)), Some(&42.0));
+        assert_eq!(leaf.get_voxel(Vec3i::new(1, 1, 1)), &42.0);
         
         // Remove the voxel
         let removed = leaf.remove_voxel(Vec3i::new(1, 1, 1));
@@ -383,7 +390,7 @@ mod tests {
 
     #[test]
     fn convert_coord_to_index() {
-      let mut leaf = LeafNode::<f32, 3>::from_level_and_coord(3, Vec3i::new(8, 16, 32));
+      let mut leaf = LeafNode::<f32, 3>::from_level_and_coord(3, Vec3i::new(8, 16, 32), 0.0);
 
       assert!(!leaf.contains_coord(Vec3i::new(-5, -1, 4)));
       assert!(leaf.contains_coord(Vec3i::new(13, 21, 39)));
@@ -392,7 +399,7 @@ mod tests {
 
     #[test]
     fn convert_index_to_coord() {
-      let mut leaf = LeafNode::<f32, 3>::from_level_and_coord(3, Vec3i::new(8, 24, 32));
+      let mut leaf = LeafNode::<f32, 3>::from_level_and_coord(3, Vec3i::new(8, 24, 32), 0.0);
       assert_eq!(leaf.index_to_coord(7+2*8+4*8*8), Vec3i::new(15, 26, 36));
     }
 }

@@ -6,7 +6,7 @@ mod root_node; use root_node::RootNode;
 mod internal_node; use internal_node::InternalNode;
 mod leaf_node; use leaf_node::LeafNode;
 
-pub trait VoxelData: Clone {
+pub trait VoxelData: Clone + std::cmp::PartialEq {
     /// Check if this voxel is "active" (non-empty)
     fn is_active(&self) -> bool;
 
@@ -26,16 +26,13 @@ pub trait NodeTrait<T: VoxelData> {
     fn total_count(&self) -> usize;
     
     // Data operations (implemented by leaf nodes, return None for internal nodes)
-    fn get_voxel(&self, coord: Vec3i) -> Option<&T>;
+    fn get_voxel(&self, coord: Vec3i) -> &T;
     fn set_voxel(&mut self, coord: Vec3i, value: T) -> Option<T>;
     fn remove_voxel(&mut self, coord: Vec3i) -> Option<T>;
 
     // Iterator operations
     fn active_voxels(&self) -> Box<dyn Iterator<Item = (Vec3i, &T)> + '_>;
-    fn all_voxels(&self) -> Box<dyn Iterator<Item = (Vec3i, &T)> + '_>;
-    
-    // Background value operations
-    fn background_value(&self) -> &T;
+    fn all_voxels(&self) -> Box<dyn Iterator<Item = (Vec3i, &T)> + '_>;    
 }
 
 trait ChildNodeTrait<T: VoxelData>: NodeTrait<T> {
@@ -62,7 +59,7 @@ trait ChildNodeTrait<T: VoxelData>: NodeTrait<T> {
     }
     
     // Add factory method
-    fn create(coord: Vec3i, level: u32) -> Self;
+    fn create(coord: Vec3i, level: u32, background_value: T) -> Self;
 }
 
 // Separate trait for advanced users
@@ -101,8 +98,11 @@ pub struct VoxelVolumeSummary {
 impl<T: VoxelData + Clone + 'static> VoxelVolume<T> {
     /// Create a new voxel volume with a configuration
     pub fn with_config(config: VolumeConfig) -> Self {
-        let root: Box<dyn NodeTrait<T>> 
-        = Box::new(RootNode::<T, LeafNode<T, 2>>::default());
+        let root: Box<dyn NodeTrait<T>> = match config.volume_config_type {
+            VolumeConfigType::Default => Box::new(RootNode::<T, LeafNode<T, 2>>::default()),
+            VolumeConfigType::Hashx5x4 => Box::new(RootNode::<T, InternalNode<T, LeafNode<T, 4>, 5>>::default()),
+            VolumeConfigType::Hashx2x1 => Box::new(RootNode::<T, InternalNode<T, LeafNode<T, 1>, 2>>::default()),
+        };
         Self {
             root,
             config,
@@ -117,11 +117,11 @@ impl<T: VoxelData + Clone + 'static> VoxelVolume<T> {
 
     // Basic voxel operations
     /// Get a voxel at a given coordinate
-    pub fn get_voxel(&self, coord: Vec3i) -> Option<&T> {
+    pub fn get_voxel(&self, coord: Vec3i) -> &T {
         self.root.get_voxel(coord)
     }
 
-    pub fn get_voxel_f(&self, coord: Vec3f) -> Option<&T> {
+    pub fn get_voxel_f(&self, coord: Vec3f) -> &T {
       self.get_voxel(self.cv_coord(coord))
     }
 
@@ -455,11 +455,15 @@ impl<T: VoxelData, const INTERNAL_CHILDREN: usize, const LEAF_CHILDREN: usize> V
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct VolumeConfig {
     pub compression: CompressionType,
+    pub volume_config_type: VolumeConfigType,
     pub size: f32,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum VolumeConfigType {
     Default,
+    Hashx5x4,
+    Hashx2x1,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -479,6 +483,7 @@ mod tests {
         let config = VolumeConfig {
           compression: CompressionType::None,
           size: 10.0,
+          volume_config_type: VolumeConfigType::Default,
         };
 
         /*

@@ -1,5 +1,5 @@
 use log::info;
-use yanvox::voxel::{VoxelData, VoxelVolume, VolumeConfig, CompressionType};
+use yanvox::voxel::{VoxelData, VoxelVolume, VolumeConfig, CompressionType, VolumeConfigType};
 use yanvox::math::Vec3f;
 
 /// A voxel that stores a signed distance value
@@ -41,7 +41,8 @@ fn main() {
     // Create a volume configuration
     let config = VolumeConfig {
         compression: CompressionType::None,
-        size: 0.1, // 0.1 unit cube
+        size: 0.2, // 0.1 unit cube
+        volume_config_type: VolumeConfigType::Hashx2x1,
     };
     
     // Create a VoxelVolume using SignedDistanceVoxel
@@ -55,12 +56,10 @@ fn main() {
     let sphere_radius = 1.0;
     let domain_min = -2.0;
     let domain_max = 2.0;
-    let voxel_size = 0.1;
     
     info!("Generating sphere SDF:");
     info!("  Sphere radius: {}", sphere_radius);
     info!("  Domain: [{}, {}, {}] to [{}, {}, {}]", domain_min, domain_min, domain_min, domain_max, domain_max, domain_max);
-    info!("  Voxel size: {}", voxel_size);
     
     let voxels_set = volume.fill_bounds(
         Vec3f::new(domain_min, domain_min, domain_min), 
@@ -71,5 +70,4 @@ fn main() {
     info!("Voxels set: {}", voxels_set);
     info!("Volume summary:\n{}", volume.summary());
     
-    // TODO: Add more VoxelVolume usage examples here
 }
