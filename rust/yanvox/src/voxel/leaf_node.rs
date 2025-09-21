@@ -19,8 +19,6 @@ pub struct LeafNode<T: VoxelData, const LOG2: usize> {
     /// Origin of this leaf node
     pub origin: Vec3i,
 
-    /// Bounds of this leaf node
-    pub bounds: Bounds3i,
     /// Level of this node (highest level, typically the leaf level)
     pub level: u32,
     /// Number of active (non-background) voxels in this leaf
@@ -29,17 +27,16 @@ pub struct LeafNode<T: VoxelData, const LOG2: usize> {
 
 impl<T: VoxelData, const LOG2: usize> LeafNode<T, LOG2> {
     /// Create a new leaf node
-    pub fn new(level: u32, bounds: Bounds3i) -> Self {
+    pub fn from_level_and_coord(level: u32, coord: Vec3i) -> Self {
         let dimensions = Self::calculate_dimensions();
         let total_size = dimensions.x * dimensions.y * dimensions.z;
+        let origin = <Self as ChildNodeTrait::<_>>::key(coord);
         
         Self {
             background_value: T::background(),
             data: (0..total_size as usize).map(|_| None).collect(),
-            origin: bounds.min.clone(),
-
+            origin,
             level,
-            bounds,
             active_count: 0,
         }
     }
@@ -67,19 +64,19 @@ impl<T: VoxelData, const LOG2: usize> LeafNode<T, LOG2> {
 
     /// Convert global coordinate to local index within the data vector
     fn coord_to_index(&self, coord: Vec3i) -> Option<usize> {
-        if !self.bounds.contains(coord) {
+        if !self.bounds().contains(coord) {
             return None;
         }
 
-        log::info!("coord: {coord:?}, LOG2: {:?}", LOG2);
+        log::debug!("coord: {coord:?}, LOG2: {LOG2}");
 
         let i = coord.x & ((1 << LOG2) - 1);
         let j = coord.y & ((1 << LOG2) - 1);
         let k = coord.z & ((1 << LOG2) - 1);
-        log::info!("i: {:?}, j: {:?}, k: {:?}", i, j, k);
+        log::debug!("i: {i}, j: {j}, k: {k}");
 
         let index = i + j * (1 << LOG2) + k * (1 << LOG2) * (1 << LOG2);
-        log::info!("index: {:?}", index);
+        log::debug!("index: {index}");
         Some(index as usize)
 
 /*
@@ -114,7 +111,7 @@ impl<T: VoxelData, const LOG2: usize> LeafNode<T, LOG2> {
 
     /// Check if a coordinate is within this leaf's bounds
     pub fn contains_coord(&self, coord: Vec3i) -> bool {
-        self.bounds.contains(coord)
+        self.bounds().contains(coord)
     }
 
     /// Get the density (active voxels / total capacity) of this leaf
@@ -173,7 +170,7 @@ impl<T: VoxelData, const LOG2: usize> NodeTrait<T> for LeafNode<T, LOG2> {
     }
 
     fn bounds(&self) -> Bounds3i {
-        self.bounds
+        Bounds3i::new(self.origin, self.origin + Self::calculate_dimensions())
     }
 
     fn is_active(&self, coord: Vec3i) -> bool {
@@ -274,9 +271,8 @@ impl<T: VoxelData, const LOG2: usize> ChildNodeTrait<T> for LeafNode<T, LOG2> {
       LOG2 as u32
     }
 
-    fn create(key: Vec3i, level: u32) -> Self {
-        let bounds3 = Bounds3i::new(key, key + Self::calculate_dimensions());
-        Self::new(level, bounds3)
+    fn create(coord: Vec3i, level: u32) -> Self {
+        Self::from_level_and_coord(level, coord)
     }
 }
 
@@ -306,7 +302,7 @@ impl<T: VoxelData, const LOG2: usize> NodeDiagnostics<T> for LeafNode<T, LOG2> {
 // Implement Default for common voxel types
 impl<T: VoxelData, const LOG2: usize> Default for LeafNode<T, LOG2> {
     fn default() -> Self {
-        Self::new(0, Bounds3i::empty())
+        Self::from_level_and_coord(0, Vec3i::zero())
     }
 }
 
@@ -317,7 +313,7 @@ mod tests {
 
     #[test]
     fn test_child_node_trait() {
-        let _leaf = LeafNode::<f32, 6>::new(5, Bounds3i::empty());
+        let _leaf = LeafNode::<f32, 6>::from_level_and_coord(5, Vec3i::zero());
         
         // Test that the trait is implemented correctly
         assert_eq!(LeafNode::<f32, 6>::log2(), 6);
@@ -327,8 +323,7 @@ mod tests {
 
     #[test]
     fn test_node_diagnostics() {
-        let bounds = Bounds3i::new(Vec3i::new(0, 0, 0), Vec3i::new(8, 8, 8));
-        let mut leaf = LeafNode::<f32, 6>::new(5, bounds);
+        let mut leaf = LeafNode::<f32, 6>::from_level_and_coord(5, Vec3i::zero());
         
         // Test diagnostics
         assert_eq!(leaf.log2_child_size(), 6);
@@ -345,11 +340,10 @@ mod tests {
 
     #[test]
     fn test_leaf_node_creation() {
-        let bounds = Bounds3i::new(Vec3i::new(0, 0, 0), Vec3i::new(8, 8, 8));
-        let leaf = LeafNode::<f32, 6>::new(5, bounds); // 2^6 = 64 children
+        let leaf = LeafNode::<f32, 6>::from_level_and_coord(5, Vec3i::zero()); // 2^6 = 64 children
         
         assert_eq!(leaf.level(), 5);
-        assert_eq!(leaf.bounds(), bounds);
+        assert_eq!(leaf.bounds(), Bounds3i::new(Vec3i::zero(), Vec3i::new(64, 64, 64)));
         assert_eq!(leaf.active_count(), 0);
         assert_eq!(LeafNode::<f32, 6>::child_capacity(), 192);
         assert_eq!(leaf.dimensions(), Vec3i::new(64, 64, 64)); // 2^6 in each directions
@@ -357,8 +351,7 @@ mod tests {
 
     #[test]
     fn test_voxel_operations() {
-        let bounds = Bounds3i::new(Vec3i::new(0, 0, 0), Vec3i::new(8, 8, 8));
-        let mut leaf = LeafNode::<f32, 6>::new(5, bounds);
+        let mut leaf = LeafNode::<f32, 6>::from_level_and_coord(5, Vec3i::zero());
         
         // Set a voxel
         let result = leaf.set_voxel(Vec3i::new(1, 1, 1), 42.0);
@@ -390,8 +383,7 @@ mod tests {
 
     #[test]
     fn convert_coord_to_index() {
-      let bounds = Bounds3i::new(Vec3i::new(8, 16, 32), Vec3i::new(16, 24, 40));
-      let mut leaf = LeafNode::<f32, 3>::new(3, bounds);
+      let mut leaf = LeafNode::<f32, 3>::from_level_and_coord(3, Vec3i::new(8, 16, 32));
 
       assert!(!leaf.contains_coord(Vec3i::new(-5, -1, 4)));
       assert!(leaf.contains_coord(Vec3i::new(13, 21, 39)));
@@ -400,8 +392,7 @@ mod tests {
 
     #[test]
     fn convert_index_to_coord() {
-      let bounds = Bounds3i::new(Vec3i::new(8, 24, 32), Vec3i::new(16, 32, 40));
-      let mut leaf = LeafNode::<f32, 3>::new(3, bounds);
+      let mut leaf = LeafNode::<f32, 3>::from_level_and_coord(3, Vec3i::new(8, 24, 32));
       assert_eq!(leaf.index_to_coord(7+2*8+4*8*8), Vec3i::new(15, 26, 36));
     }
 }

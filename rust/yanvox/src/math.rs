@@ -39,6 +39,10 @@ impl Vec3i {
             z: self.z.max(other.z),
         }
     }
+
+    pub fn as_vec3f(&self) -> Vec3f {
+        Vec3f::new(self.x as f32, self.y as f32, self.z as f32)
+    }
 }
 
 impl Add for Vec3i {
@@ -184,6 +188,88 @@ impl Bounds3i {
     pub fn volume(self) -> i64 {
         let size = self.size();
         size.x as i64 * size.y as i64 * size.z as i64
+    }
+}
+
+/// 3D axis-aligned bounding box with floating point coordinates
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+pub struct Bounds3f {
+    pub min: Vec3f,
+    pub max: Vec3f,
+}
+
+impl Bounds3f {
+    pub fn new(min: Vec3f, max: Vec3f) -> Self {
+        Self { min, max }
+    }
+
+    pub fn empty() -> Self {
+        Self {
+            min: Vec3f::new(f32::MAX, f32::MAX, f32::MAX),
+            max: Vec3f::new(f32::MIN, f32::MIN, f32::MIN),
+        }
+    }
+
+    pub fn from_point(point: Vec3f) -> Self {
+        Self {
+            min: point,
+            max: point,
+        }
+    }
+
+    pub fn expand(self, point: Vec3f) -> Self {
+        Self {
+            min: Vec3f::new(
+                self.min.x.min(point.x),
+                self.min.y.min(point.y),
+                self.min.z.min(point.z),
+            ),
+            max: Vec3f::new(
+                self.max.x.max(point.x),
+                self.max.y.max(point.y),
+                self.max.z.max(point.z),
+            ),
+        }
+    }
+
+    pub fn expand_bounds(self, other: Self) -> Self {
+        Self {
+            min: Vec3f::new(
+                self.min.x.min(other.min.x),
+                self.min.y.min(other.min.y),
+                self.min.z.min(other.min.z),
+            ),
+            max: Vec3f::new(
+                self.max.x.max(other.max.x),
+                self.max.y.max(other.max.y),
+                self.max.z.max(other.max.z),
+            ),
+        }
+    }
+
+    pub fn contains(self, point: Vec3f) -> bool {
+        point.x >= self.min.x && point.x < self.max.x &&
+        point.y >= self.min.y && point.y < self.max.y &&
+        point.z >= self.min.z && point.z < self.max.z
+    }
+
+    pub fn intersects(self, other: Self) -> bool {
+        self.min.x < other.max.x && self.max.x > other.min.x &&
+        self.min.y < other.max.y && self.max.y > other.min.y &&
+        self.min.z < other.max.z && self.max.z > other.min.z
+    }
+
+    pub fn size(self) -> Vec3f {
+        Vec3f::new(
+            self.max.x - self.min.x,
+            self.max.y - self.min.y,
+            self.max.z - self.min.z,
+        )
+    }
+
+    pub fn volume(self) -> f32 {
+        let size = self.size();
+        size.x * size.y * size.z
     }
 }
 

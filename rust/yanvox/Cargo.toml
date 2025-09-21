@@ -16,3 +16,8 @@ log = "0"
 
 [dev-dependencies]
 test-log = "0"
+env_logger = "0.10"
+
+[[example]]
+name = "voxel_volume_example"
+path = "examples/voxel_volume_example.rs"

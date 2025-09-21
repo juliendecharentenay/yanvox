@@ -72,22 +72,22 @@ impl<T: VoxelData, N: ChildNodeTrait<T>, const LOG2: usize> InternalNode<T, N, L
         let log2 = <Self as ChildNodeTrait::<_>>::log2_cum();
         let child_log2 = <N as ChildNodeTrait::<_>>::log2_cum();
 
-        log::info!("coord: {:?}, log2: {:?}, child_log2: {:?}", coord, log2, child_log2);
+        log::debug!("coord: {coord:?}, log2: {log2}, child_log2: {child_log2}");
 
         let i = coord.x & (1 << log2) - 1;
         let j = coord.y & (1 << log2) - 1;
         let k = coord.z & (1 << log2) - 1;
-        log::info!("i: {:?}, j: {:?}, k: {:?}", i, j, k);
+        log::debug!("i: {i}, j: {j}, k: {k}");
 
         let i = i &! ((1 << child_log2) - 1);
         let j = j &! ((1 << child_log2) - 1);
         let k = k &! ((1 << child_log2) - 1);
-        log::info!("i: {:?}, j: {:?}, k: {:?}", i, j, k);
+        log::debug!("i: {i}, j: {j}, k: {k}");
 
         let i = i / (1 << child_log2);
         let j = j / (1 << child_log2);
         let k = k / (1 << child_log2);
-        log::info!("i: {:?}, j: {:?}, k: {:?}", i, j, k);
+        log::debug!("i: {i}, j: {j}, k: {k}");
 
         let index = i + j * (1 << LOG2) + k * (1 << LOG2) * (1 << LOG2); 
         Some(index as usize)
@@ -100,13 +100,13 @@ impl<T: VoxelData, N: ChildNodeTrait<T>, const LOG2: usize> InternalNode<T, N, L
         let z = local_index / (dimensions.y * dimensions.x);
         let y = (local_index % (dimensions.y * dimensions.x)) / dimensions.x;
         let x = local_index % dimensions.x;
-        log::info!("x: {:?}, y: {:?}, z: {:?}", x, y, z);
+        log::debug!("x: {x}, y: {y}, z: {z}");
 
         let child_log2 = <N as ChildNodeTrait::<_>>::log2_cum();
         let x = x * (1 << child_log2);
         let y = y * (1 << child_log2);
         let z = z * (1 << child_log2);
-        log::info!("x: {:?}, y: {:?}, z: {:?}", x, y, z);
+        log::debug!("x: {x}, y: {y}, z: {z}");
 
         Vec3i::new(x, y, z) + self.origin
     }
