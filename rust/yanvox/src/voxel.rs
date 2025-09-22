@@ -14,6 +14,13 @@ pub trait VoxelData: Clone + std::cmp::PartialEq {
     fn background() -> Self;
 }
 
+/// Trait for voxel data that can provide signed distance values for mesh generation
+pub trait SignedDistance: VoxelData {
+    /// Get the signed distance value at this voxel
+    /// Positive values indicate outside the surface, negative values indicate inside
+    fn signed_distance(&self) -> f32;
+}
+
 /// Unified trait that all nodes implement
 /// This allows seamless traversal from root to leaf
 pub trait NodeTrait<T: VoxelData> {
@@ -159,6 +166,11 @@ impl<T: VoxelData + Clone + 'static> VoxelVolume<T> {
     /// Get the total number of voxels
     pub fn total_count(&self) -> usize {
         self.root.total_count()
+    }
+
+    /// Get an iterator over all active voxels
+    pub fn active_voxels(&self) -> Box<dyn Iterator<Item = (Vec3i, &T)> + '_> {
+        self.root.active_voxels()
     }
 
     // Batch operations

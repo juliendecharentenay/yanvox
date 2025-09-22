@@ -1,6 +1,7 @@
 use log::info;
-use yanvox::voxel::{VoxelData, VoxelVolume, VolumeConfig, CompressionType, VolumeConfigType};
+use yanvox::voxel::{VoxelData, VoxelVolume, VolumeConfig, CompressionType, VolumeConfigType, SignedDistance};
 use yanvox::math::Vec3f;
+use yanvox::mesh_generation::MeshBuilder;
 
 /// A voxel that stores a signed distance value
 /// Only active when within EPSILON distance of the surface
@@ -40,6 +41,12 @@ impl std::cmp::PartialEq for SignedDistanceVoxel {
   }
 }
 
+impl SignedDistance for SignedDistanceVoxel {
+    fn signed_distance(&self) -> f32 {
+        self.value
+    }
+}
+
 fn main() {
     // Initialize logging
     env_logger::init();
@@ -77,5 +84,15 @@ fn main() {
     info!("Sphere generation complete");
     info!("Voxels set: {}", voxels_set);
     info!("Volume summary:\n{}", volume.summary());
+    
+    // Generate mesh using the builder pattern
+    info!("Generating mesh using marching cubes...");
+    let mesh = MeshBuilder::new(&volume)
+        .with_iso_level(0.0)
+        .build()
+        .expect("Failed to generate mesh");
+    
+    info!("Generated mesh with {} vertices and {} triangles", 
+          mesh.vertex_count(), mesh.triangle_count());
     
 }
