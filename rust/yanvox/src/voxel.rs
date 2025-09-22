@@ -110,9 +110,8 @@ impl<T: VoxelData + Clone + 'static> VoxelVolume<T> {
     }
     
     fn cv_coord(&self, coord: Vec3f) -> Vec3i {
-      let size = &self.config.size;
-      let log2 = self.root.log2_cum() as i32;
-      coord.scale(2.0_f32.powi(log2) / size).as_vec3i()
+      let leaf_voxel_size = &self.config.leaf_voxel_size;
+      coord.scale(1.0_f32 / leaf_voxel_size).as_vec3i()
     }
 
     // Basic voxel operations
@@ -163,19 +162,6 @@ impl<T: VoxelData + Clone + 'static> VoxelVolume<T> {
     }
 
     // Batch operations
-    /// Fill a region with a given value
-    /*
-    pub fn fill_region(&mut self, bounds: Bounds3i, value: T) -> usize {
-        for i in bounds.min.x..bounds.max.x {
-          for j in bounds.min.y..bounds.max.y {
-            for k in bounds.min.z..bounds.max.z {
-              self.root.set_voxel(Vec3i::new(i, j, k), value.clone());
-            }
-          }
-        }
-        ((bounds.max.z - bounds.min.z) * (bounds.max.y - bounds.min.y) * (bounds.max.x - bounds.min.x)) as usize
-    }
-    */
 
     /*
     /// Clear a region
@@ -273,17 +259,17 @@ impl<T: VoxelData + Clone + 'static> VoxelVolume<T> {
     /// # Returns
     /// The corresponding world-space coordinate
     fn voxel_to_world_coord(&self, voxel_coord: Vec3i) -> Vec3f {
-        let size = &self.config.size;
-        let log2 = self.root.log2_cum() as i32;
-        voxel_coord.as_vec3f().scale(size / 2.0_f32.powi(log2))
+        let leaf_voxel_size = &self.config.leaf_voxel_size;
+        voxel_coord.as_vec3f().scale(*leaf_voxel_size)
     }
 
-    /// Get the root voxel size (the size configured in VolumeConfig)
+    /// Get the root voxel size
     /// 
     /// # Returns
     /// The root voxel size in world units
-    pub fn get_voxel_size(&self) -> f32 {
-        self.config.size
+    pub fn get_root_voxel_size(&self) -> f32 {
+        let log2 = self.root.log2_cum() as i32;
+        2.0_f32.powi(log2) * self.config.leaf_voxel_size
     }
 
     /// Get the actual leaf voxel size (the smallest voxel size in the hierarchy)
@@ -291,7 +277,7 @@ impl<T: VoxelData + Clone + 'static> VoxelVolume<T> {
     /// # Returns
     /// The leaf voxel size in world units
     pub fn get_leaf_voxel_size(&self) -> f32 {
-        self.config.size / 2.0_f32.powi(self.root.log2_cum() as i32)
+        self.config.leaf_voxel_size
     }
 
     /// Get the voxel center coordinate for a given world coordinate
@@ -323,8 +309,8 @@ impl<T: VoxelData + Clone + 'static> VoxelVolume<T> {
             self.voxel_to_world_coord(bounds.max),
         );
         VoxelVolumeSummary {
-            root_length: self.config.size,
-            leaf_length: self.config.size / 2.0_f32.powi(self.root.log2_cum() as i32),
+            root_length: self.get_root_voxel_size(),
+            leaf_length: self.get_leaf_voxel_size(),
             bounds,
             active_voxels,
             total_voxels,
@@ -342,7 +328,7 @@ impl std::fmt::Display for VoxelVolumeSummary {
         write!(f, "  Bounds: [{}, {}, {}] to [{}, {}, {}]\n", 
                self.bounds.min.x, self.bounds.min.y, self.bounds.min.z,
                self.bounds.max.x, self.bounds.max.y, self.bounds.max.z)?;
-        write!(f, "  World bounds: [{}, {}, {}] to [{}, {}, {}]\n", 
+        write!(f, "  World bounds: [{:.2}, {:.2}, {:.2}] to [{:.2}, {:.2}, {:.2}]\n", 
                self.world_bounds.min.x, self.world_bounds.min.y, self.world_bounds.min.z,
                self.world_bounds.max.x, self.world_bounds.max.y, self.world_bounds.max.z)?;
         write!(f, "  Active voxels: {} / {} ({:.1}%)\n", 
@@ -456,7 +442,7 @@ impl<T: VoxelData, const INTERNAL_CHILDREN: usize, const LEAF_CHILDREN: usize> V
 pub struct VolumeConfig {
     pub compression: CompressionType,
     pub volume_config_type: VolumeConfigType,
-    pub size: f32,
+    pub leaf_voxel_size: f32,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -482,7 +468,7 @@ mod tests {
     fn test_voxel_volume_length_calculations() {
         let config = VolumeConfig {
           compression: CompressionType::None,
-          size: 10.0,
+          leaf_voxel_size: 2.5,
           volume_config_type: VolumeConfigType::Default,
         };
 

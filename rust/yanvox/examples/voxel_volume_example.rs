@@ -4,7 +4,7 @@ use yanvox::math::Vec3f;
 
 /// A voxel that stores a signed distance value
 /// Only active when within EPSILON distance of the surface
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone)]
 struct SignedDistanceVoxel {
     value: f32,
 }
@@ -32,6 +32,14 @@ impl VoxelData for SignedDistanceVoxel {
     }
 }
 
+impl std::cmp::PartialEq for SignedDistanceVoxel {
+  fn eq(&self, other: &Self) -> bool {
+    let left = f32::max(-Self::EPSILON, f32::min(Self::EPSILON, self.value));
+    let right = f32::max(-Self::EPSILON, f32::min(Self::EPSILON, other.value));
+    left == right
+  }
+}
+
 fn main() {
     // Initialize logging
     env_logger::init();
@@ -41,7 +49,7 @@ fn main() {
     // Create a volume configuration
     let config = VolumeConfig {
         compression: CompressionType::None,
-        size: 0.2, // 0.1 unit cube
+        leaf_voxel_size: 0.02, // unit cube
         volume_config_type: VolumeConfigType::Hashx2x1,
     };
     

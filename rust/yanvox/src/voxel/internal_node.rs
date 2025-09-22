@@ -20,8 +20,6 @@ pub struct InternalNode<T: VoxelData, N: ChildNodeTrait<T>, const LOG2: usize> {
 
     /// Level of this node
     pub level: u32,
-    /// Number of active (non-background) child nodes in this internal node
-    active_count: usize,
 }
 
 impl<T: VoxelData, N: ChildNodeTrait<T>, const LOG2: usize> InternalNode<T, N, LOG2> {
@@ -34,7 +32,6 @@ impl<T: VoxelData, N: ChildNodeTrait<T>, const LOG2: usize> InternalNode<T, N, L
             data: (0..total_size as usize).map(|_| None).collect(),
             origin,
             level,
-            active_count: 0,
         }
     }
 
@@ -61,7 +58,7 @@ impl<T: VoxelData, N: ChildNodeTrait<T>, const LOG2: usize> InternalNode<T, N, L
 
     /// Check if this internal node is at capacity
     pub fn is_at_capacity(&self) -> bool {
-        self.active_count >= Self::child_capacity()
+        self.active_count() >= Self::child_capacity()
     }
 
     /// Convert global coordinate to local index within the data vector
@@ -118,7 +115,7 @@ impl<T: VoxelData, N: ChildNodeTrait<T>, const LOG2: usize> InternalNode<T, N, L
 
     /// Get the density (active child nodes / total capacity) of this internal node
     pub fn density(&self) -> f32 {
-        self.active_count as f32 / Self::child_capacity() as f32
+        self.active_count() as f32 / Self::child_capacity() as f32
     }
 
     /// Check if this internal node is sparse (low density)
@@ -140,7 +137,6 @@ impl<T: VoxelData, N: ChildNodeTrait<T>, const LOG2: usize> InternalNode<T, N, L
         for child in &mut self.data {
             *child = None;
         }
-        self.active_count = 0;
     }
 
     /// Get memory usage in bytes
@@ -154,7 +150,6 @@ impl<T: VoxelData, N: ChildNodeTrait<T>, const LOG2: usize> InternalNode<T, N, L
         let index = self.coord_to_index(coord.clone()).expect("Child key should be within bounds");
         let child = N::create(coord, self.level + 1, self.background_value.clone());
         self.data[index] = Some(child);
-        self.active_count += 1;
         self.data[index].as_mut().unwrap()
     }
 
@@ -303,7 +298,7 @@ impl<T: VoxelData, N: ChildNodeTrait<T>, const LOG2: usize> NodeDiagnostics<T> f
 
     /// Returns the number of child nodes
     fn child_count(&self) -> usize {
-        self.active_count
+        self.data.iter().filter(|e| e.is_some()).count()
     }
 }
 
