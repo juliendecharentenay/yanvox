@@ -1,6 +1,7 @@
 use crate::voxel::{VoxelVolume, SignedDistance};
 use crate::math::{Vec3i, Vec3f};
 use super::mesh::{Mesh, Vertex, Triangle};
+use super::marching_cubes::{CORNER_OFFSETS, EDGE_VERTEX_INDICES, EDGE_MASKS, TRIANGLE_TABLE};
 use thiserror::Error;
 
 /// Error types for algorithm
@@ -34,7 +35,7 @@ impl MarchingCubesAlgorithm {
         Ok(mesh)
     }
 
-    /// Process a single cube for marching cubes (simplified version)
+    /// Process a single cube for marching cubes with proper edge vertex interpolation
     fn process_cube<T: SignedDistance + Clone + 'static>(
         &self,
         volume: &VoxelVolume<T>,
@@ -44,21 +45,49 @@ impl MarchingCubesAlgorithm {
     ) -> Result<(), AlgorithmError> {
         // Get the 8 corner values of the cube
         if let Some(corner_values) = self.get_cube_corner_values(volume, coord) {
-
-            // Simple case: if we have a mix of values above and below iso level, create a triangle
-            let below_count = corner_values.iter().filter(|&&v| v < iso_level).count();
-        
-            if below_count > 0 && below_count < 8 {
-                // Create a simple triangle at the center of the cube for now
-                let leaf_size = volume.get_leaf_voxel_size();
-                let center = coord.as_vec3f().scale(leaf_size) + Vec3f::new(leaf_size * 0.5, leaf_size * 0.5, leaf_size * 0.5);
+            // Calculate the cube configuration index
+            let cube_index = self.calculate_cube_index(&corner_values, iso_level);
             
-                // Create 3 vertices for a simple triangle
-                let v1 = mesh.add_vertex(Vertex { position: center + Vec3f::new(-0.1, 0.0, 0.0) });
-                let v2 = mesh.add_vertex(Vertex { position: center + Vec3f::new(0.1, 0.0, 0.0) });
-                let v3 = mesh.add_vertex(Vertex { position: center + Vec3f::new(0.0, 0.1, 0.0) });
+            // Skip if no surface intersection
+            if cube_index == 0 || cube_index == 255 {
+                return Ok(());
+            }
             
+            // Get the edge mask for this configuration
+            let edge_mask = EDGE_MASKS[cube_index as usize];
+            
+            // Calculate vertex positions on active edges
+            let mut edge_vertices = [Vec3f::new(0.0, 0.0, 0.0); 12];
+            let leaf_size = volume.get_leaf_voxel_size();
+            
+            for edge in 0..12 {
+                if (edge_mask & (1 << edge)) != 0u16 {
+                    edge_vertices[edge] = self.interpolate_edge_vertex(
+                        &corner_values,
+                        coord,
+                        edge,
+                        iso_level,
+                        leaf_size
+                    );
+                }
+            }
+            
+            // Generate triangles using the triangulation table
+            let triangle_data = TRIANGLE_TABLE[cube_index as usize];
+            let mut i = 0;
+            while i < 16 && triangle_data[i] != -1i32 {
+                let v1_idx = triangle_data[i] as usize;
+                let v2_idx = triangle_data[i + 1] as usize;
+                let v3_idx = triangle_data[i + 2] as usize;
+                
+                // Add vertices to mesh and create triangle
+                let v1 = mesh.add_vertex(Vertex { position: edge_vertices[v1_idx] });
+                let v2 = mesh.add_vertex(Vertex { position: edge_vertices[v2_idx] });
+                let v3 = mesh.add_vertex(Vertex { position: edge_vertices[v3_idx] });
+                
                 mesh.add_triangle(Triangle { indices: [v1, v2, v3] });
+                
+                i += 3;
             }
         }
 
@@ -71,12 +100,7 @@ impl MarchingCubesAlgorithm {
         volume: &VoxelVolume<T>,
         coord: Vec3i,
     ) -> Option<[f32; 8]> {
-        let offsets = [
-            Vec3i::new(0, 0, 0), Vec3i::new(1, 0, 0),
-            Vec3i::new(1, 1, 0), Vec3i::new(0, 1, 0),
-            Vec3i::new(0, 0, 1), Vec3i::new(1, 0, 1),
-            Vec3i::new(1, 1, 1), Vec3i::new(0, 1, 1),
-        ];
+        let offsets = self.corner_offsets();
 
         let mut values = [0.0; 8];
         for (i, offset) in offsets.iter().enumerate() {
@@ -86,5 +110,67 @@ impl MarchingCubesAlgorithm {
             values[i] = voxel.signed_distance();
         }
         Some(values)
+    }
+
+    /// Calculate the cube configuration index based on corner values and iso level
+    fn calculate_cube_index(&self, corner_values: &[f32; 8], iso_level: f32) -> u8 {
+        let mut cube_index = 0u8;
+        
+        for (i, &value) in corner_values.iter().enumerate() {
+            if value < iso_level {
+                cube_index |= 1 << i;
+            }
+        }
+        
+        cube_index
+    }
+
+    /// Interpolate vertex position on an edge based on iso level
+    fn interpolate_edge_vertex(
+        &self,
+        corner_values: &[f32; 8],
+        coord: Vec3i,
+        edge: usize,
+        iso_level: f32,
+        leaf_size: f32,
+    ) -> Vec3f {
+        let edge_indices = EDGE_VERTEX_INDICES[edge];
+        let v1_idx = edge_indices[0] as usize;
+        let v2_idx = edge_indices[1] as usize;
+        
+        let val1 = corner_values[v1_idx];
+        let val2 = corner_values[v2_idx];
+        
+        // Calculate interpolation factor
+        let t = if (val2 - val1).abs() < 1e-6 {
+            0.5 // Avoid division by zero
+        } else {
+            (iso_level - val1) / (val2 - val1)
+        };
+        
+        // Clamp t to valid range
+        let t = t.clamp(0.0, 1.0);
+        
+        // Get corner positions
+        let corner_offsets: [Vec3i; 8] = self.corner_offsets();
+        
+        let pos1 = (coord + corner_offsets[v1_idx]).as_vec3f().scale(leaf_size);
+        let pos2 = (coord + corner_offsets[v2_idx]).as_vec3f().scale(leaf_size);
+        
+        // Interpolate between the two corner positions
+        pos1 + (pos2 - pos1).scale(t)
+    }
+
+    fn corner_offsets(&self) -> [Vec3i; 8] {
+      [
+        CORNER_OFFSETS[0].into(),
+        CORNER_OFFSETS[1].into(),
+        CORNER_OFFSETS[2].into(),
+        CORNER_OFFSETS[3].into(),
+        CORNER_OFFSETS[4].into(),
+        CORNER_OFFSETS[5].into(),
+        CORNER_OFFSETS[6].into(),
+        CORNER_OFFSETS[7].into(),
+      ]
     }
 }

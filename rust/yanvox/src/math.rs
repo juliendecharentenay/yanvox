@@ -45,6 +45,12 @@ impl Vec3i {
     }
 }
 
+impl std::convert::From<(i32, i32, i32)> for Vec3i {
+  fn from((x, y, z): (i32, i32, i32)) -> Self {
+    Vec3i::new(x, y, z)
+  }
+}
+
 impl Add for Vec3i {
     type Output = Self;
     fn add(self, other: Self) -> Self {
@@ -141,6 +147,14 @@ impl Vec3f {
         x: self.x * f,
         y: self.y * f,
         z: self.z * f,
+      }
+    }
+
+    pub fn cross(&self, other: &Self) -> Self {
+      Self {
+        x:  self.y * other.z - self.z * other.y,
+        y:  self.z * other.x - self.x * other.z,
+        z:  self.x * other.y - self.y * other.x,
       }
     }
 

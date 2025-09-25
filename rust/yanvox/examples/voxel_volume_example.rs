@@ -56,7 +56,7 @@ fn main() {
     // Create a volume configuration
     let config = VolumeConfig {
         compression: CompressionType::None,
-        leaf_voxel_size: 0.02, // unit cube
+        leaf_voxel_size: 0.05, // unit cube
         volume_config_type: VolumeConfigType::Hashx2x1,
     };
     
@@ -94,5 +94,11 @@ fn main() {
     
     info!("Generated mesh with {} vertices and {} triangles", 
           mesh.vertex_count(), mesh.triangle_count());
+    
+    // Export mesh to STL file
+    info!("Exporting mesh to STL file...");
+    mesh.export_stl_file("mesh.stl")
+        .expect("Failed to export mesh");
+    info!("Mesh exported to mesh.stl");
     
 }
