@@ -33,7 +33,6 @@
 //
 // Triangulation cases are generated prioritising rotations over inversions, which can introduce non-manifold geometry.
 //
-use crate::math::{Vec3i};
 
 pub const CORNER_OFFSETS: [(i32, i32, i32); 8] = [
   (0, 0, 0), 

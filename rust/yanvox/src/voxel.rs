@@ -5,6 +5,7 @@ use serde::{Deserialize, Serialize};
 mod root_node; use root_node::RootNode;
 mod internal_node; use internal_node::InternalNode;
 mod leaf_node; use leaf_node::LeafNode;
+mod voxel_coord; use voxel_coord::VoxelCoord;
 
 pub trait VoxelData: Clone + std::cmp::PartialEq {
     /// Check if this voxel is "active" (non-empty)
@@ -131,6 +132,10 @@ impl<T: VoxelData + Clone + 'static> VoxelVolume<T> {
       self.get_voxel(self.cv_coord(coord))
     }
 
+    pub fn get_voxel_with_coord(&self, coord: Vec3i) -> (VoxelCoord, &T) {
+      (VoxelCoord::from_voxel(coord, self.config.leaf_voxel_size), self.get_voxel(coord))
+    }
+
     /// Set a voxel at a given coordinate
     pub fn set_voxel(&mut self, coord: Vec3i, value: T) -> Option<T> {
         self.root.set_voxel(coord, value)
@@ -171,6 +176,14 @@ impl<T: VoxelData + Clone + 'static> VoxelVolume<T> {
     /// Get an iterator over all active voxels
     pub fn active_voxels(&self) -> Box<dyn Iterator<Item = (Vec3i, &T)> + '_> {
         self.root.active_voxels()
+    }
+
+    /// Get an iterator over all active voxels
+    pub fn active_voxels_with_coords(&self) -> Box<dyn Iterator<Item = (VoxelCoord, &T)> + '_> {
+        Box::new(
+        self.root.active_voxels()
+        .map(|(coord, value)| (VoxelCoord::from_voxel(coord, self.config.leaf_voxel_size), value))
+        )
     }
 
     // Batch operations
@@ -270,7 +283,7 @@ impl<T: VoxelData + Clone + 'static> VoxelVolume<T> {
     /// 
     /// # Returns
     /// The corresponding world-space coordinate
-    fn voxel_to_world_coord(&self, voxel_coord: Vec3i) -> Vec3f {
+    pub fn voxel_to_world_coord(&self, voxel_coord: Vec3i) -> Vec3f {
         let leaf_voxel_size = &self.config.leaf_voxel_size;
         voxel_coord.as_vec3f().scale(*leaf_voxel_size)
     }
@@ -400,55 +413,6 @@ impl Iterator for VoxelCoordIterator {
         Some(result)
     }
 }
-
-/*
-impl<T: VoxelData, const INTERNAL_CHILDREN: usize, const LEAF_CHILDREN: usize> VoxelVolume<T, INTERNAL_CHILDREN, LEAF_CHILDREN> {
-    // Construction
-    pub fn new() -> Self;
-    pub fn with_config(config: VolumeConfig<T>) -> Self;
-    pub fn with_background(background_value: T) -> Self;
-    
-    // Basic voxel operations
-    pub fn get_voxel(&self, coord: Vec3i) -> T;
-    pub fn set_voxel(&mut self, coord: Vec3i, value: T) -> T;
-    pub fn remove_voxel(&mut self, coord: Vec3i) -> Option<T>;
-    pub fn is_active(&self, coord: Vec3i) -> bool;
-    
-    // Batch operations
-    pub fn fill_region(&mut self, bounds: Bounds3i, value: T) -> usize;
-    pub fn clear_region(&mut self, bounds: Bounds3i) -> usize;
-    pub fn copy_region(&self, bounds: Bounds3i) -> Vec<(Vec3i, T)>;
-    pub fn paste_region(&mut self, data: &[(Vec3i, T)]) -> usize;
-    
-    // Query operations
-    pub fn query_bounds(&self, bounds: Bounds3i) -> impl Iterator<Item = (Vec3i, T)>;
-    pub fn query_radius(&self, center: Vec3i, radius: f32) -> impl Iterator<Item = (Vec3i, T)>;
-    pub fn query_sphere(&self, center: Vec3i, radius: f32) -> impl Iterator<Item = (Vec3i, T)>;
-    
-    // Iteration
-    pub fn active_voxels(&self) -> impl Iterator<Item = (Vec3i, T)>;
-    pub fn all_voxels(&self) -> impl Iterator<Item = (Vec3i, T)>;
-    pub fn active_voxels_in_bounds(&self, bounds: Bounds3i) -> impl Iterator<Item = (Vec3i, T)>;
-    
-    // Statistics and metadata
-    pub fn active_count(&self) -> usize;
-    pub fn total_count(&self) -> usize;
-    pub fn memory_usage(&self) -> usize;
-    pub fn bounds(&self) -> Bounds3i;
-    pub fn is_empty(&self) -> bool;
-    pub fn background_value(&self) -> T;
-    
-    // Configuration
-    pub fn config(&self) -> &VolumeConfig<T>;
-    pub fn set_background(&mut self, value: T);
-    pub fn optimize(&mut self); // Defragmentation, compression, etc.
-    
-    // Utility
-    pub fn clear(&mut self);
-    pub fn clone_region(&self, bounds: Bounds3i) -> Self;
-    pub fn merge(&mut self, other: &Self) -> usize;
-}
-    */
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct VolumeConfig {
