@@ -1,7 +1,6 @@
 //! Root node implementation with internal hierarchy management
 use super::*;
-use math::{Vec3i, Bounds3i};
-use voxel::{VoxelData, NodeTrait};
+use crate::math::{Vec3i, Bounds3i};
 use std::collections::HashMap;
 use serde::{Deserialize, Serialize};
 

@@ -1,4 +1,5 @@
-use crate::voxel::{VoxelVolume, SignedDistance};
+use crate::voxel::VoxelVolume;
+use crate::voxel_data::SignedDistance;
 use super::mesh::Mesh;
 use super::algorithm::MarchingCubesAlgorithm;
 use thiserror::Error;

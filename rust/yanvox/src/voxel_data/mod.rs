@@ -1,8 +1,11 @@
 use crate::voxel::VoxelData;
 
+mod signed_distance;
 mod bool_voxel;
 mod float_voxel;
 mod int_voxel;
+
+pub use signed_distance::SignedDistance;
 
 // Implement VoxelData for common primitive types
 impl VoxelData for f32 {

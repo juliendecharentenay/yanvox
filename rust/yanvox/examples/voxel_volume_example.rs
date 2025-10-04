@@ -1,5 +1,6 @@
 use log::info;
-use yanvox::voxel::{VoxelData, VoxelVolume, VolumeConfig, CompressionType, VolumeConfigType, SignedDistance};
+use yanvox::voxel::{VoxelData, VoxelVolume, VolumeConfig, CompressionType, VolumeConfigType};
+use yanvox::voxel_data::{SignedDistance};
 use yanvox::math::Vec3f;
 use yanvox::mesh_generation::MeshBuilder;
 

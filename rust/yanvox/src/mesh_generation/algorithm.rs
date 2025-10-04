@@ -1,4 +1,5 @@
-use crate::voxel::{VoxelVolume, SignedDistance};
+use crate::voxel::VoxelVolume;
+use crate::voxel_data::SignedDistance;
 use crate::math::{Vec3i, Vec3f};
 use super::mesh::{Mesh, Vertex, Triangle};
 use super::marching_cubes::{CORNER_OFFSETS, EDGE_VERTEX_INDICES, EDGE_MASKS, TRIANGLE_TABLE};
@@ -58,7 +59,6 @@ impl MarchingCubesAlgorithm {
             
             // Calculate vertex positions on active edges
             let mut edge_vertices = [Vec3f::new(0.0, 0.0, 0.0); 12];
-            let leaf_size = volume.get_leaf_voxel_size();
             
             for edge in 0..12 {
                 if (edge_mask & (1 << edge)) != 0u16 {
@@ -67,7 +67,7 @@ impl MarchingCubesAlgorithm {
                         coord,
                         edge,
                         iso_level,
-                        leaf_size
+                        volume,
                     );
                 }
             }
@@ -126,13 +126,13 @@ impl MarchingCubesAlgorithm {
     }
 
     /// Interpolate vertex position on an edge based on iso level
-    fn interpolate_edge_vertex(
+    fn interpolate_edge_vertex<T: SignedDistance + Clone + 'static>(
         &self,
         corner_values: &[f32; 8],
         coord: Vec3i,
         edge: usize,
         iso_level: f32,
-        leaf_size: f32,
+        volume: &VoxelVolume<T>,
     ) -> Vec3f {
         let edge_indices = EDGE_VERTEX_INDICES[edge];
         let v1_idx = edge_indices[0] as usize;
@@ -153,9 +153,8 @@ impl MarchingCubesAlgorithm {
         
         // Get corner positions
         let corner_offsets: [Vec3i; 8] = self.corner_offsets();
-        
-        let pos1 = (coord + corner_offsets[v1_idx]).as_vec3f().scale(leaf_size);
-        let pos2 = (coord + corner_offsets[v2_idx]).as_vec3f().scale(leaf_size);
+        let pos1 = volume.voxel_to_world_coord(coord + corner_offsets[v1_idx]);
+        let pos2 = volume.voxel_to_world_coord(coord + corner_offsets[v2_idx]);
         
         // Interpolate between the two corner positions
         pos1 + (pos2 - pos1).scale(t)
